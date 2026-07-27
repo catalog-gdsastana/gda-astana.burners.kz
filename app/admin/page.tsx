@@ -70,8 +70,13 @@ export default function AdminPage() {
     if (type === 'image') setUploadingImage(true);
     if (type === 'pdf') setUploadingPdf(true);
 
+    // Очищаем имя файла от пробелов, спецсимволов и кириллицы
     const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+    const safeBaseName = file.name
+      .replace(/\.[^/.]+$/, "")
+      .replace(/[^a-[#0-9]/gi, '_'); // Заменяем все спецсимволы на _
+    
+    const fileName = `${Date.now()}-${safeBaseName}.${fileExt}`;
     const filePath = `${type}s/${fileName}`;
 
     const { error } = await supabase.storage.from('products').upload(filePath, file);
@@ -80,8 +85,10 @@ export default function AdminPage() {
       setMessage(`Ошибка загрузки файла: ${error.message}`);
     } else {
       const { data } = supabase.storage.from('products').getPublicUrl(filePath);
+      
       if (type === 'image') setImageUrl(data.publicUrl);
       if (type === 'pdf') setPdfUrl(data.publicUrl);
+      
       setMessage(`✅ Файл "${file.name}" успешно прикреплен!`);
     }
 
@@ -141,7 +148,7 @@ export default function AdminPage() {
       category,
       price,
       description,
-      brand, // Сохраняется просто как текст
+      brand,
       image_url: imageUrl,
       pdf_url: pdfUrl,
     };
@@ -294,7 +301,6 @@ export default function AdminPage() {
                 </select>
               </div>
 
-              {/* ПОЛЕ БРЕНД (ТЕКСТОВОЕ) */}
               <div>
                 <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Бренд</label>
                 <input 
