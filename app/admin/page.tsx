@@ -80,7 +80,7 @@ export default function AdminPage() {
     const safeFileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
     
     // Относительный путь без лишних символов
-    const filePath = `${type}s/${safeFileName}`;
+    const filePath = `${type}_${safeFileName}`;
 
     const { error } = await supabase.storage
       .from('products')
