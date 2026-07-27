@@ -37,7 +37,11 @@ export default function AdminPage() {
   }, []);
 
   const fetchProducts = async () => {
-    const { data, error } = await supabase.from('products').select('*');
+    // Выбираем конкретные поля без кавычек и опечаток
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, title, article, category, brand, price, description, image_url, pdf_url');
+
     if (error) {
       console.error('Ошибка загрузки товаров в админке:', error.message);
     }
@@ -70,11 +74,10 @@ export default function AdminPage() {
     if (type === 'image') setUploadingImage(true);
     if (type === 'pdf') setUploadingPdf(true);
 
-    // Очищаем имя файла от пробелов, спецсимволов и кириллицы
     const fileExt = file.name.split('.').pop();
-    const safeBaseName = file.name
-      .replace(/\.[^/.]+$/, "")
-      .replace(/[^a-[#0-9]/gi, '_'); // Заменяем все спецсимволы на _
+    // Безопасная очистка названия файла от кириллицы и спецсимволов
+    const rawName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+    const safeBaseName = rawName.replace(/[^a-zA-Z0-9]/g, '_'); 
     
     const fileName = `${Date.now()}-${safeBaseName}.${fileExt}`;
     const filePath = `${type}s/${fileName}`;
