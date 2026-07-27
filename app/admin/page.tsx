@@ -19,11 +19,6 @@ export default function AdminPage() {
   const [brand, setBrand] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [pdfUrl, setPdfUrl] = useState('');
-
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const [uploadingPdf, setUploadingPdf] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -39,7 +34,7 @@ export default function AdminPage() {
   const fetchProducts = async () => {
     const { data, error } = await supabase
       .from('products')
-      .select('id, title, article, category, brand, price, description, image_url, pdf_url');
+      .select('id, title, article, category, brand, price, description');
 
     if (error) {
       console.error('Ошибка загрузки товаров в админке:', error.message);
@@ -66,45 +61,6 @@ export default function AdminPage() {
     localStorage.removeItem('gds_admin_auth');
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'pdf') => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (type === 'image') setUploadingImage(true);
-    if (type === 'pdf') setUploadingPdf(true);
-
-    // Получаем расширение (например, pdf или png)
-    const fileExt = file.name.split('.').pop()?.toLowerCase();
-    
-    // Генерируем гарантированно безопасное имя только из цифр и латинских букв
-    const safeFileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-    
-    // Относительный путь без лишних символов
-    const filePath = `${type}_${safeFileName}`;
-
-    const { error } = await supabase.storage
-      .from('products')
-      .upload(filePath, file, {
-        cacheControl: '3600',
-        upsert: true
-      });
-
-    if (error) {
-      console.error('Storage Upload Error:', error);
-      setMessage(`Ошибка загрузки файла: ${error.message}`);
-    } else {
-      const { data } = supabase.storage.from('products').getPublicUrl(filePath);
-      
-      if (type === 'image') setImageUrl(data.publicUrl);
-      if (type === 'pdf') setPdfUrl(data.publicUrl);
-      
-      setMessage(`✅ Файл "${file.name}" успешно прикреплен!`);
-    }
-
-    if (type === 'image') setUploadingImage(false);
-    if (type === 'pdf') setUploadingPdf(false);
-  };
-
   const resetForm = () => {
     setEditingId(null);
     setTitle('');
@@ -113,8 +69,6 @@ export default function AdminPage() {
     setBrand('');
     setPrice('');
     setDescription('');
-    setImageUrl('');
-    setPdfUrl('');
   };
 
   const handleEdit = (prod: any) => {
@@ -125,8 +79,6 @@ export default function AdminPage() {
     setBrand(prod.brand || '');
     setPrice(prod.price || '');
     setDescription(prod.description || '');
-    setImageUrl(prod.image_url || '');
-    setPdfUrl(prod.pdf_url || '');
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -151,7 +103,6 @@ export default function AdminPage() {
     setLoading(true);
     setMessage('');
 
-    // ✅ Защита: передаем null вместо пустой строки "", чтобы не ломать Supabase Storage URL
     const productPayload = {
       title: title.trim(),
       article: article.trim() || null,
@@ -159,8 +110,6 @@ export default function AdminPage() {
       price: price.trim() || null,
       description: description.trim() || null,
       brand: brand.trim() || null,
-      image_url: imageUrl.trim() || null,
-      pdf_url: pdfUrl.trim() || null,
     };
 
     let error;
@@ -334,40 +283,6 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* 🖼️ ЗАГРУЗКА ИЗОБРАЖЕНИЯ */}
-            <div className="bg-[#0F172A] p-4 rounded-2xl border border-slate-700/60 space-y-2">
-              <label className="block text-xs font-bold text-slate-300 uppercase">Картинка товара</label>
-              <div className="flex items-center gap-3">
-                <label className="cursor-pointer bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-md shadow-orange-500/10">
-                  <span>🖼️ {uploadingImage ? 'Загрузка...' : 'Выбрать картинку с ПК'}</span>
-                  <input 
-                    type="file" 
-                    accept="image/*"
-                    onChange={(e) => handleFileUpload(e, 'image')}
-                    className="hidden" 
-                  />
-                </label>
-                {imageUrl && <span className="text-xs text-emerald-400 font-bold">✓ Картинка прикреплена</span>}
-              </div>
-            </div>
-
-            {/* 📄 ЗАГРУЗКА PDF ПАСПОРТА */}
-            <div className="bg-[#0F172A] p-4 rounded-2xl border border-slate-700/60 space-y-2">
-              <label className="block text-xs font-bold text-slate-300 uppercase">Паспорт / Инструкция (PDF)</label>
-              <div className="flex items-center gap-3">
-                <label className="cursor-pointer bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-md shadow-orange-500/10">
-                  <span>📄 {uploadingPdf ? 'Загрузка...' : 'Выбрать PDF с ПК'}</span>
-                  <input 
-                    type="file" 
-                    accept="application/pdf"
-                    onChange={(e) => handleFileUpload(e, 'pdf')}
-                    className="hidden" 
-                  />
-                </label>
-                {pdfUrl && <span className="text-xs text-emerald-400 font-bold">✓ PDF прикреплен</span>}
-              </div>
-            </div>
-
             <div>
               <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Описание</label>
               <textarea 
@@ -381,7 +296,7 @@ export default function AdminPage() {
 
             <button
               type="submit"
-              disabled={loading || uploadingImage || uploadingPdf}
+              disabled={loading}
               className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-orange-500/20 active:scale-[0.99] disabled:opacity-50"
             >
               {loading ? 'Сохранение...' : editingId ? '💾 Сохранить изменения' : '➕ Добавить товар'}
