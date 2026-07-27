@@ -184,7 +184,7 @@ export default function Home() {
       ? (((Number(inputValue) || 0) * 100) / 1000) * 1.25
       : Number(inputValue) || 0
   );
-  const calculatedGcal = (calculatedKw * 0.00086).toFixed(2);
+  const calculatedGcal = (calculatedKw * 1.25).toFixed(2);
 
   // 🔍 Фильтрация товаров (Поиск + Бренды + Категории + Мощность)
   const filteredProducts = useMemo(() => {
