@@ -98,37 +98,41 @@ export default function AdminPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+ const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage('');
 
-    // Явно передаем null для колонок ссылок, чтобы Supabase не выдавал ошибку URL
-    const productPayload = {
+    // Собираем ТОЛЬКО текстовые поля (БЕЗ image_url и pdf_url)
+    const productPayload: Record<string, any> = {
       title: title.trim(),
-      article: article.trim() || null,
       category,
-      price: price.trim() || null,
-      description: description.trim() || null,
-      brand: brand.trim() || null,
-      image_url: null,
-      pdf_url: null,
     };
+
+    if (article.trim()) productPayload.article = article.trim();
+    if (brand.trim()) productPayload.brand = brand.trim();
+    if (price.trim()) productPayload.price = price.trim();
+    if (description.trim()) productPayload.description = description.trim();
 
     let error;
 
     if (editingId) {
-      const res = await supabase.from('products').update(productPayload).eq('id', editingId);
+      const res = await supabase
+        .from('products')
+        .update(productPayload)
+        .eq('id', editingId);
       error = res.error;
     } else {
-      const res = await supabase.from('products').insert([productPayload]);
+      const res = await supabase
+        .from('products')
+        .insert([productPayload]);
       error = res.error;
     }
 
     setLoading(false);
 
     if (error) {
-      console.error('Supabase error detail:', error);
+      console.error('Supabase Submit Error:', error);
       setMessage(`Ошибка: ${error.message}`);
     } else {
       setMessage(editingId ? '✅ Товар успешно обновлен!' : '✅ Товар успешно добавлен!');
@@ -136,7 +140,7 @@ export default function AdminPage() {
       fetchProducts();
     }
   };
-
+  
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#0F172A] flex items-center justify-center p-4">
