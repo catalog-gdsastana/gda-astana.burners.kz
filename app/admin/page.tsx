@@ -132,15 +132,25 @@ export default function AdminPage() {
     setLoading(false);
 
     if (error) {
-      console.error('Supabase Submit Error:', error);
+      console.error('MESSAGE:', error.message);
+      console.error('DETAILS:', error.details);
+      console.error('HINT:', error.hint);
+      console.error('CODE:', error.code);
+      console.error('FULL ERROR:', error);
+
       setMessage(`Ошибка: ${error.message}`);
     } else {
-      setMessage(editingId ? '✅ Товар успешно обновлен!' : '✅ Товар успешно добавлен!');
+      setMessage(
+        editingId
+          ? '✅ Товар успешно обновлен!'
+          : '✅ Товар успешно добавлен!'
+      );
+
       resetForm();
-      fetchProducts();
+      await fetchProducts();
     }
   };
-  
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#0F172A] flex items-center justify-center p-4">
