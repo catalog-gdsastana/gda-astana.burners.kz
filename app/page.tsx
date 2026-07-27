@@ -182,9 +182,9 @@ export default function Home() {
   const calculatedKw = Math.round(
     calcMode === 'area'
       ? (((Number(inputValue) || 0) * 100) / 1000) * 1.25
-      : Number(inputValue) || 0
+      : (Number(inputValue) || 0) * 1.25 // <--- Добавили умножение на 1.25 для мощности котла
   );
-  const calculatedGcal = (calculatedKw * 1.25).toFixed(2);
+  const calculatedGcal = (calculatedKw * 0.00086).toFixed(2); // (небольшое примечание ниже)
 
   // 🔍 Фильтрация товаров (Поиск + Бренды + Категории + Мощность)
   const filteredProducts = useMemo(() => {
