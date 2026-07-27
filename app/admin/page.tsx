@@ -37,7 +37,6 @@ export default function AdminPage() {
   }, []);
 
   const fetchProducts = async () => {
-    // Выбираем конкретные поля без кавычек и опечаток
     const { data, error } = await supabase
       .from('products')
       .select('id, title, article, category, brand, price, description, image_url, pdf_url');
@@ -75,11 +74,13 @@ export default function AdminPage() {
     if (type === 'pdf') setUploadingPdf(true);
 
     const fileExt = file.name.split('.').pop();
-    // Безопасная очистка названия файла от кириллицы и спецсимволов
     const rawName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+    
+    // Очищаем имя от спецсимволов и кириллицы
     const safeBaseName = rawName.replace(/[^a-zA-Z0-9]/g, '_'); 
     
     const fileName = `${Date.now()}-${safeBaseName}.${fileExt}`;
+    // Обязательно относительный путь БЕЗ слэша в начале!
     const filePath = `${type}s/${fileName}`;
 
     const { error } = await supabase.storage.from('products').upload(filePath, file);
@@ -145,15 +146,16 @@ export default function AdminPage() {
     setLoading(true);
     setMessage('');
 
+    // ✅ Защита: передаем null вместо пустой строки "", чтобы не ломать Supabase Storage URL
     const productPayload = {
-      title,
-      article,
+      title: title.trim(),
+      article: article.trim() || null,
       category,
-      price,
-      description,
-      brand,
-      image_url: imageUrl,
-      pdf_url: pdfUrl,
+      price: price.trim() || null,
+      description: description.trim() || null,
+      brand: brand.trim() || null,
+      image_url: imageUrl.trim() || null,
+      pdf_url: pdfUrl.trim() || null,
     };
 
     let error;
