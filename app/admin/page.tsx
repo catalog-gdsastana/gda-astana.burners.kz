@@ -73,19 +73,24 @@ export default function AdminPage() {
     if (type === 'image') setUploadingImage(true);
     if (type === 'pdf') setUploadingPdf(true);
 
-    const fileExt = file.name.split('.').pop();
-    const rawName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+    // Получаем расширение (например, pdf или png)
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
     
-    // Очищаем имя от спецсимволов и кириллицы
-    const safeBaseName = rawName.replace(/[^a-zA-Z0-9]/g, '_'); 
+    // Генерируем гарантированно безопасное имя только из цифр и латинских букв
+    const safeFileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
     
-    const fileName = `${Date.now()}-${safeBaseName}.${fileExt}`;
-    // Обязательно относительный путь БЕЗ слэша в начале!
-    const filePath = `${type}s/${fileName}`;
+    // Относительный путь без лишних символов
+    const filePath = `${type}s/${safeFileName}`;
 
-    const { error } = await supabase.storage.from('products').upload(filePath, file);
+    const { error } = await supabase.storage
+      .from('products')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: true
+      });
 
     if (error) {
+      console.error('Storage Upload Error:', error);
       setMessage(`Ошибка загрузки файла: ${error.message}`);
     } else {
       const { data } = supabase.storage.from('products').getPublicUrl(filePath);
