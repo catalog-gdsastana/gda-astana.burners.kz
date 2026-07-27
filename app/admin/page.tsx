@@ -103,6 +103,7 @@ export default function AdminPage() {
     setLoading(true);
     setMessage('');
 
+    // Явно передаем null для колонок ссылок, чтобы Supabase не выдавал ошибку URL
     const productPayload = {
       title: title.trim(),
       article: article.trim() || null,
@@ -110,6 +111,8 @@ export default function AdminPage() {
       price: price.trim() || null,
       description: description.trim() || null,
       brand: brand.trim() || null,
+      image_url: null,
+      pdf_url: null,
     };
 
     let error;
@@ -125,6 +128,7 @@ export default function AdminPage() {
     setLoading(false);
 
     if (error) {
+      console.error('Supabase error detail:', error);
       setMessage(`Ошибка: ${error.message}`);
     } else {
       setMessage(editingId ? '✅ Товар успешно обновлен!' : '✅ Товар успешно добавлен!');
