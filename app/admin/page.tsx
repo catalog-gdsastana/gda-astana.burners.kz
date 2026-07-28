@@ -105,15 +105,15 @@ export default function AdminPage() {
 
     // Собираем ТОЛЬКО текстовые поля (БЕЗ image_url и pdf_url)
     const productPayload: Record<string, any> = {
-      title: title.trim(),
-      category,
-    };
+  title: title.trim(),
+  category,
+  description: description.trim(),
+};
 
     if (article.trim()) productPayload.article = article.trim();
     if (brand.trim()) productPayload.brand = brand.trim();
     if (price.trim()) productPayload.price = price.trim();
-    if (description.trim()) productPayload.description = description.trim();
-
+    
     let error;
 
     if (editingId) {
@@ -132,24 +132,21 @@ export default function AdminPage() {
     setLoading(false);
 
     if (error) {
-      console.error('MESSAGE:', error.message);
-      console.error('DETAILS:', error.details);
-      console.error('HINT:', error.hint);
-      console.error('CODE:', error.code);
-      console.error('FULL ERROR:', error);
+  console.log("FULL ERROR:", JSON.stringify(error, null, 2));
+  console.error(error);
 
-      setMessage(`Ошибка: ${error.message}`);
-    } else {
-      setMessage(
-        editingId
-          ? '✅ Товар успешно обновлен!'
-          : '✅ Товар успешно добавлен!'
-      );
+  setMessage(`Ошибка: ${error.message}`);
+} else {
+  setMessage(
+    editingId
+      ? "✅ Товар успешно обновлен!"
+      : "✅ Товар успешно добавлен!"
+  );
 
-      resetForm();
-      await fetchProducts();
-    }
-  };
+  resetForm();
+  fetchProducts();
+}
+};
 
   if (!isAuthenticated) {
     return (
