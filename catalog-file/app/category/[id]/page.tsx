@@ -159,9 +159,13 @@ export default function CategoryPage({ params }: { params: Promise<{ id: string 
                       <h4 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition">
                         {prod.title}
                       </h4>
-                      <p className="text-gray-500 text-xs line-clamp-2 mb-4">
-                        {prod.description}
-                      </p>
+                      <Link
+                          href={`/product/${prod.id}`}
+                          className="inline-flex items-center text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
+                        >
+                          Подробнее о товаре →
+                        </Link>
+                      
                     </div>
                   </div>
 
@@ -192,21 +196,26 @@ export default function CategoryPage({ params }: { params: Promise<{ id: string 
           </div>
         ) : (
           <div className="bg-white rounded-3xl p-12 text-center border border-gray-100 my-4">
-            <span className="text-5xl mb-4 block">📦</span>
-            <h3 className="text-lg font-bold text-gray-800 mb-2">В этой категории пока нет товаров</h3>
-            <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
-              Вы можете добавить новые товары через панель администратора.
-            </p>
-            <Link 
-              href="/admin" 
-              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-6 py-3 rounded-xl transition"
-            >
-              Перейти в админку
-            </Link>
-          </div>
+  <span className="text-5xl mb-4 block">📦</span>
+
+  <h3 className="text-lg font-bold text-gray-800 mb-2">
+    В этой категории пока нет товаров
+  </h3>
+
+  <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
+    Вы можете добавить новые товары через панель администратора.
+  </p>
+
+  <Link
+    href="/admin"
+    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-6 py-3 rounded-xl transition"
+  >
+    Перейти в админку
+  </Link>
+</div>
         )}
 
       </div>
     </div>
   );
-}
+}   
