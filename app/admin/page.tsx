@@ -1,7 +1,26 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../supabase';
+import {
+  DEFAULT_CATALOG_CATEGORIES,
+  DEFAULT_MAIN_CATEGORY_ID,
+  DEFAULT_SUBGROUP_ID,
+  getCategoryLabel,
+  sortCatalogCategories,
+  type CatalogCategory,
+} from '../catalog';
+
+interface AdminProduct {
+  id: string;
+  title: string;
+  article?: string | null;
+  category?: string | null;
+  category_id?: string | null;
+  brand?: string | null;
+  price?: string | number | null;
+  description?: string | null;
+}
 
 export default function AdminPage() {
   const ADMIN_PASSWORD = 'MAF060704';
@@ -10,12 +29,16 @@ export default function AdminPage() {
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [authError, setAuthError] = useState<string>('');
 
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<AdminProduct[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<CatalogCategory[]>(
+    DEFAULT_CATALOG_CATEGORIES
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [title, setTitle] = useState('');
   const [article, setArticle] = useState('');
-  const [category, setCategory] = useState('gas');
+  const [mainCategoryId, setMainCategoryId] = useState(DEFAULT_MAIN_CATEGORY_ID);
+  const [categoryId, setCategoryId] = useState(DEFAULT_SUBGROUP_ID);
   const [brand, setBrand] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
@@ -23,25 +46,58 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  useEffect(() => {
-    fetchProducts();
-    const savedAuth = localStorage.getItem('gds_admin_auth');
-    if (savedAuth === 'true') {
-      setIsAuthenticated(true);
-    }
-  }, []);
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     const { data, error } = await supabase
       .from('products')
-      .select('id, title, article, category, brand, price, description');
+      .select('id, title, article, category, category_id, brand, price, description');
 
     if (error) {
       console.error('Ошибка загрузки товаров в админке:', error.message);
     }
     if (data) {
-      setProducts(data);
+      setProducts(data as AdminProduct[]);
     }
+  }, []);
+
+  const fetchCatalogCategories = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('catalog_categories')
+      .select('id, name, slug, parent_id, icon, sort_order, is_active')
+      .eq('is_active', true)
+      .order('sort_order');
+
+    if (error || !data || data.length === 0) {
+      console.error('Ошибка загрузки структуры каталога:', error?.message);
+      setCatalogCategories(DEFAULT_CATALOG_CATEGORIES);
+      return;
+    }
+
+    setCatalogCategories(sortCatalogCategories(data as CatalogCategory[]));
+  }, []);
+
+  useEffect(() => {
+    const loadAdminData = async () => {
+      await Promise.resolve();
+      await Promise.all([fetchProducts(), fetchCatalogCategories()]);
+      if (localStorage.getItem('gds_admin_auth') === 'true') {
+        setIsAuthenticated(true);
+      }
+    };
+
+    void loadAdminData();
+  }, [fetchCatalogCategories, fetchProducts]);
+
+  const mainCategories = catalogCategories.filter((item) => item.parent_id === null);
+  const availableSubgroups = catalogCategories.filter(
+    (item) => item.parent_id === mainCategoryId
+  );
+
+  const handleMainCategoryChange = (nextMainCategoryId: string) => {
+    setMainCategoryId(nextMainCategoryId);
+    const firstSubgroup = catalogCategories.find(
+      (item) => item.parent_id === nextMainCategoryId
+    );
+    setCategoryId(firstSubgroup?.id || '');
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -65,19 +121,25 @@ export default function AdminPage() {
     setEditingId(null);
     setTitle('');
     setArticle('');
-    setCategory('gas');
+    setMainCategoryId(DEFAULT_MAIN_CATEGORY_ID);
+    setCategoryId(DEFAULT_SUBGROUP_ID);
     setBrand('');
     setPrice('');
     setDescription('');
   };
 
-  const handleEdit = (prod: any) => {
+  const handleEdit = (prod: AdminProduct) => {
     setEditingId(prod.id);
     setTitle(prod.title || '');
     setArticle(prod.article || '');
-    setCategory(prod.category || 'gas');
+    const selectedSubgroup =
+      catalogCategories.find((item) => item.id === prod.category_id) ||
+      catalogCategories.find((item) => item.slug === prod.category) ||
+      catalogCategories.find((item) => item.id === DEFAULT_SUBGROUP_ID);
+    setMainCategoryId(selectedSubgroup?.parent_id || DEFAULT_MAIN_CATEGORY_ID);
+    setCategoryId(selectedSubgroup?.id || DEFAULT_SUBGROUP_ID);
     setBrand(prod.brand || '');
-    setPrice(prod.price || '');
+    setPrice(prod.price === null || prod.price === undefined ? '' : String(prod.price));
     setDescription(prod.description || '');
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -104,11 +166,19 @@ export default function AdminPage() {
     setMessage('');
 
     // Собираем ТОЛЬКО текстовые поля (БЕЗ image_url и pdf_url)
-    const productPayload: Record<string, any> = {
-  title: title.trim(),
-  category,
-  description: description.trim(),
-};
+    const selectedSubgroup = catalogCategories.find((item) => item.id === categoryId);
+    if (!selectedSubgroup || !selectedSubgroup.parent_id) {
+      setLoading(false);
+      setMessage('Ошибка: выберите подгруппу товара');
+      return;
+    }
+
+    const productPayload: Record<string, string> = {
+      title: title.trim(),
+      category: selectedSubgroup.slug,
+      category_id: selectedSubgroup.id,
+      description: description.trim(),
+    };
 
     if (article.trim()) productPayload.article = article.trim();
     if (brand.trim()) productPayload.brand = brand.trim();
@@ -261,20 +331,45 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Категория</label>
+                <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Основной раздел *</label>
                 <select 
-                  value={category} 
-                  onChange={(e) => setCategory(e.target.value)}
+                  required
+                  value={mainCategoryId}
+                  onChange={(e) => handleMainCategoryChange(e.target.value)}
                   className="w-full bg-[#0F172A] border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-orange-500"
                 >
-                  <option value="gas">Газовые горелки</option>
-                  <option value="diesel">Дизельные горелки</option>
-                  <option value="combined">Комбинированные горелки</option>
+                  {mainCategories.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Подгруппа *</label>
+                <select
+                  required
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                  disabled={availableSubgroups.length === 0}
+                  className="w-full bg-[#0F172A] border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-orange-500 disabled:opacity-50"
+                >
+                  {availableSubgroups.length === 0 && (
+                    <option value="">Нет доступных подгрупп</option>
+                  )}
+                  {availableSubgroups.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Бренд</label>
                 <input 
@@ -334,7 +429,8 @@ export default function AdminPage() {
                   <tr className="border-b border-slate-700/60 text-[10px] text-slate-400 uppercase tracking-wider">
                     <th className="pb-3 px-2">Товар</th>
                     <th className="pb-3 px-2">Бренд</th>
-                    <th className="pb-3 px-2">Категория</th>
+                    <th className="pb-3 px-2">Раздел</th>
+                    <th className="pb-3 px-2">Подгруппа</th>
                     <th className="pb-3 px-2">Цена</th>
                     <th className="pb-3 px-2 text-right">Действия</th>
                   </tr>
@@ -347,7 +443,23 @@ export default function AdminPage() {
                         {prod.article && <span className="block text-[10px] font-normal text-slate-400">Арт: {prod.article}</span>}
                       </td>
                       <td className="py-3 px-2 text-slate-300 font-semibold">{prod.brand || '—'}</td>
-                      <td className="py-3 px-2 text-slate-400 font-medium">{prod.category}</td>
+                      <td className="py-3 px-2 text-slate-400 font-medium">
+                        {(() => {
+                          const subgroup =
+                            catalogCategories.find((item) => item.id === prod.category_id) ||
+                            catalogCategories.find((item) => item.slug === prod.category);
+                          return (
+                            catalogCategories.find((item) => item.id === subgroup?.parent_id)?.name || '—'
+                          );
+                        })()}
+                      </td>
+                      <td className="py-3 px-2 text-slate-400 font-medium">
+                        {getCategoryLabel(
+                          catalogCategories,
+                          prod.category_id || undefined,
+                          prod.category || undefined
+                        )}
+                      </td>
                       <td className="py-3 px-2 font-bold text-orange-400">{prod.price ? `${prod.price} ₸` : 'По запросу'}</td>
                       <td className="py-3 px-2 text-right space-x-2">
                         <button

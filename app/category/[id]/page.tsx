@@ -1,21 +1,24 @@
 import { supabase } from '../../supabase';
 import Link from 'next/link';
-
-const categoryNames: Record<string, string> = {
-  gas: 'Газовые горелки',
-  diesel: 'Дизельные горелки',
-  combined: 'Комбинированные горелки',
-};
+import { DEFAULT_CATALOG_CATEGORIES } from '../../catalog';
 
 export default async function CategoryPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const categoryTitle = categoryNames[id] || 'Горелки';
+  const { data: databaseCategory } = await supabase
+    .from('catalog_categories')
+    .select('id, name, slug, parent_id')
+    .eq('slug', id)
+    .maybeSingle();
 
-  // Фильтруем товары по полю category
-  const { data: products } = await supabase
-    .from('products')
-    .select('*')
-    .eq('category', id);
+  const fallbackCategory = DEFAULT_CATALOG_CATEGORIES.find((item) => item.slug === id);
+  const selectedCategory = databaseCategory || fallbackCategory;
+  const categoryTitle = selectedCategory?.name || 'Каталог оборудования';
+
+  // Поле category оставлено как резерв для товаров, созданных до обновления базы.
+  const productsQuery = supabase.from('products').select('*');
+  const { data: products } = selectedCategory?.id
+    ? await productsQuery.or(`category_id.eq.${selectedCategory.id},category.eq.${id}`)
+    : await productsQuery.eq('category', id);
 
   return (
     <main className="min-h-screen bg-gray-50 p-6 md:p-12">
@@ -67,7 +70,7 @@ export default async function CategoryPage({ params }: { params: Promise<{ id: s
                 В этой категории пока нет товаров.
               </p>
               <p className="text-gray-400 text-sm mt-1">
-                Убедитесь, что у товара в Supabase в поле <code className="bg-gray-100 px-2 py-0.5 rounded text-red-500">category</code> написано ровно: <strong>{id}</strong>
+                Добавьте товар в эту подгруппу через админ-панель.
               </p>
             </div>
           )}

@@ -4,6 +4,12 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { supabase } from './supabase';
 import { translations } from './translations';
+import {
+  DEFAULT_CATALOG_CATEGORIES,
+  getCategoryLabel,
+  sortCatalogCategories,
+  type CatalogCategory,
+} from './catalog';
 
 const WHATSAPP_NUMBER = '77000000000';
 const COMPANY_EMAIL = 'info@gds-astana.kz';
@@ -18,6 +24,7 @@ interface Product {
   power_kw?: number;      // Мощность в кВт (опционально)
   in_stock?: boolean;
   category: string;
+  category_id?: string;
   pdf_url?: string;       // 👈 Ссылка на PDF документ
   price?: number | string;
   image_url?: string;
@@ -39,11 +46,15 @@ export default function Home() {
   const t = translations[lang];
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<CatalogCategory[]>(
+    DEFAULT_CATALOG_CATEGORIES
+  );
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentYear, setCurrentYear] = useState<number>(2026);
+  const currentYear = new Date().getFullYear();
 
   // ⚙️ Состояния для фильтрации
   const [selectedBrand, setSelectedBrand] = useState<string>('all');
+  const [selectedMainCategory, setSelectedMainCategory] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [minPower, setMinPower] = useState<string>('');
   const [maxPower, setMaxPower] = useState<string>('');
@@ -61,15 +72,27 @@ export default function Home() {
   const [isEstimateOpen, setIsEstimateOpen] = useState(false);
 
   useEffect(() => {
-    setCurrentYear(new Date().getFullYear());
-
     async function fetchProducts() {
       const { data, error } = await supabase.from('products').select('*');
       if (data && !error) {
         setProducts(data);
       }
     }
+
+    async function fetchCatalogCategories() {
+      const { data, error } = await supabase
+        .from('catalog_categories')
+        .select('id, name, slug, parent_id, icon, sort_order, is_active')
+        .eq('is_active', true)
+        .order('sort_order');
+
+      if (data && !error && data.length > 0) {
+        setCatalogCategories(sortCatalogCategories(data as CatalogCategory[]));
+      }
+    }
+
     fetchProducts();
+    fetchCatalogCategories();
   }, []);
 
   // 🏷️ Динамически получаем только существующие в базе бренды
@@ -83,11 +106,24 @@ export default function Home() {
     return Array.from(brandsSet).sort();
   }, [products]);
 
-  const categories = [
-    { id: 'gas', title: 'Газовые горелки', icon: '🔥' },
-    { id: 'diesel', title: 'Дизельные горелки', icon: '⚙️' },
-    { id: 'combined', title: 'Комбинированные горелки', icon: '⚡' },
-  ];
+  const mainCategories = useMemo(
+    () => catalogCategories.filter((item) => item.parent_id === null),
+    [catalogCategories]
+  );
+
+  const visibleSubgroups = useMemo(
+    () =>
+      catalogCategories.filter(
+        (item) =>
+          item.parent_id !== null &&
+          (selectedMainCategory === 'all' || item.parent_id === selectedMainCategory)
+      ),
+    [catalogCategories, selectedMainCategory]
+  );
+
+  const getProductSubgroup = (product: Product) =>
+    catalogCategories.find((item) => item.id === product.category_id) ||
+    catalogCategories.find((item) => item.slug === product.category);
 
   const infoLinks = [
     { title: 'О компании', href: '#about', icon: '🏢' },
@@ -98,6 +134,11 @@ export default function Home() {
 
   const toggleCategory = (catId: string) => {
     setOpenCategory(openCategory === catId ? null : catId);
+  };
+
+  const handleMainCategoryFilter = (mainCategoryId: string) => {
+    setSelectedMainCategory(mainCategoryId);
+    setSelectedCategory('all');
   };
 
   const formatPrice = (price?: number | string) => {
@@ -189,13 +230,24 @@ export default function Home() {
   // 🔍 Фильтрация товаров (Поиск + Бренды + Категории + Мощность)
   const filteredProducts = useMemo(() => {
     return products.filter((prod) => {
+      const productSubgroup =
+        catalogCategories.find((item) => item.id === prod.category_id) ||
+        catalogCategories.find((item) => item.slug === prod.category);
+      const productMainCategory = productSubgroup?.parent_id;
+
       // Поиск по тексту
       const query = searchQuery.toLowerCase().trim();
       if (query) {
         const titleMatch = prod.title?.toLowerCase().includes(query);
         const articleMatch = prod.article?.toLowerCase().includes(query);
         const descriptionMatch = prod.description?.toLowerCase().includes(query);
-        const categoryMatch = prod.category?.toLowerCase().includes(query);
+        const categoryMatch =
+          prod.category?.toLowerCase().includes(query) ||
+          productSubgroup?.name.toLowerCase().includes(query) ||
+          catalogCategories
+            .find((item) => item.id === productMainCategory)
+            ?.name.toLowerCase()
+            .includes(query);
         if (!titleMatch && !articleMatch && !descriptionMatch && !categoryMatch) return false;
       }
 
@@ -206,9 +258,14 @@ export default function Home() {
         }
       }
 
-      // Фильтр по Категории
+      // Фильтр по основному разделу
+      if (selectedMainCategory !== 'all' && productMainCategory !== selectedMainCategory) {
+        return false;
+      }
+
+      // Фильтр по подгруппе
       if (selectedCategory !== 'all') {
-        if (!prod.category || prod.category.toLowerCase() !== selectedCategory.toLowerCase()) {
+        if (productSubgroup?.id !== selectedCategory) {
           return false;
         }
       }
@@ -220,11 +277,21 @@ export default function Home() {
 
       return true;
     });
-  }, [products, searchQuery, selectedBrand, selectedCategory, minPower, maxPower]);
+  }, [
+    products,
+    catalogCategories,
+    searchQuery,
+    selectedBrand,
+    selectedMainCategory,
+    selectedCategory,
+    minPower,
+    maxPower,
+  ]);
 
   const resetFilters = () => {
     setSearchQuery('');
     setSelectedBrand('all');
+    setSelectedMainCategory('all');
     setSelectedCategory('all');
     setMinPower('');
     setMaxPower('');
@@ -274,21 +341,21 @@ export default function Home() {
 
               {isCatalogOpen && (
                 <div className="pl-4 pr-1 py-2 flex flex-col gap-1 border-l-2 border-orange-500 ml-6 my-1">
-                  {categories.map((cat) => {
-                    const categoryProducts = products.filter(
-                      (p) => String(p.category).trim().toLowerCase() === cat.id.toLowerCase()
+                  {mainCategories.map((mainCategory) => {
+                    const subgroups = catalogCategories.filter(
+                      (item) => item.parent_id === mainCategory.id
                     );
-                    const isCatOpen = openCategory === cat.id;
+                    const isCatOpen = openCategory === mainCategory.id;
 
                     return (
-                      <div key={cat.id}>
+                      <div key={mainCategory.id}>
                         <button
-                          onClick={() => toggleCategory(cat.id)}
+                          onClick={() => toggleCategory(mainCategory.id)}
                           className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-700 font-medium rounded-lg hover:bg-orange-50 hover:text-orange-600 transition"
                         >
                           <div className="flex items-center gap-2">
-                            <span>{cat.icon}</span>
-                            <span>{cat.title}</span>
+                            <span>{mainCategory.icon || '📁'}</span>
+                            <span>{mainCategory.name}</span>
                           </div>
                           <span className={`text-[10px] transition-transform ${isCatOpen ? 'rotate-180' : ''}`}>
                             ▼
@@ -297,20 +364,28 @@ export default function Home() {
 
                         {isCatOpen && (
                           <div className="pl-6 pr-1 py-1 flex flex-col gap-1 border-l border-gray-200 ml-4 my-1">
-                            {categoryProducts.length > 0 ? (
-                              categoryProducts.map((prod, pIndex) => (
+                            {subgroups.length > 0 ? (
+                              subgroups.map((subgroup) => {
+                                const subgroupProductCount = products.filter((product) => {
+                                  const productSubgroup = getProductSubgroup(product);
+                                  return productSubgroup?.id === subgroup.id;
+                                }).length;
+
+                                return (
                                 <Link
-                                  key={prod.id || `drawer-prod-${pIndex}`}
-                                  href={`/category/${cat.id}`}
+                                  key={subgroup.id}
+                                  href={`/category/${subgroup.slug}`}
                                   onClick={() => setIsMenuOpen(false)}
-                                  className="text-xs text-slate-600 hover:text-orange-600 py-1.5 px-2 rounded hover:bg-orange-50 transition block truncate font-medium"
+                                  className="text-xs text-slate-600 hover:text-orange-600 py-1.5 px-2 rounded hover:bg-orange-50 transition flex items-center justify-between gap-2 font-medium"
                                 >
-                                  • {prod.title}
+                                  <span className="truncate">• {subgroup.name}</span>
+                                  <span className="text-[10px] text-slate-400">{subgroupProductCount}</span>
                                 </Link>
-                              ))
+                                );
+                              })
                             ) : (
                               <span className="text-[11px] text-gray-400 py-1 italic pl-2">
-                                Нет товаров
+                                Нет подгрупп
                               </span>
                             )}
                           </div>
@@ -493,7 +568,7 @@ export default function Home() {
           </div>
 
           {/* Фильтры */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-slate-800">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2 border-t border-slate-800">
             {/* БРЕНД (динамически из Supabase) */}
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
@@ -513,20 +588,39 @@ export default function Home() {
               </select>
             </div>
 
-            {/* КАТЕГОРИЯ */}
+            {/* ОСНОВНОЙ РАЗДЕЛ */}
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
-                Тип горелки
+                Основной раздел
+              </label>
+              <select
+                value={selectedMainCategory}
+                onChange={(e) => handleMainCategoryFilter(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 text-slate-100 text-xs font-bold rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">Все разделы</option>
+                {mainCategories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* ПОДГРУППА */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                Подгруппа
               </label>
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
                 className="w-full bg-slate-800 border border-slate-700 text-slate-100 text-xs font-bold rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="all">Все категории</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.title}
+                <option value="all">Все подгруппы</option>
+                {visibleSubgroups.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
                   </option>
                 ))}
               </select>
@@ -558,7 +652,7 @@ export default function Home() {
           </div>
 
           {/* Кнопка сброса при активных фильтрах */}
-          {(selectedBrand !== 'all' || selectedCategory !== 'all' || minPower || maxPower || searchQuery) && (
+          {(selectedBrand !== 'all' || selectedMainCategory !== 'all' || selectedCategory !== 'all' || minPower || maxPower || searchQuery) && (
             <div className="flex justify-end pt-2">
               <button
                 onClick={resetFilters}
@@ -607,7 +701,7 @@ export default function Home() {
                       <div className="p-6">
                         <div className="flex justify-between items-start gap-2 mb-2">
                           <span className="text-xs text-blue-400 font-medium uppercase tracking-wider bg-blue-950/60 border border-blue-800/50 px-2.5 py-1 rounded-md">
-                            {prod.category}
+                            {getCategoryLabel(catalogCategories, prod.category_id, prod.category)}
                           </span>
                           {prod.article && (
                             <span className="text-xs text-slate-400 font-mono">
@@ -620,9 +714,7 @@ export default function Home() {
                           {prod.title}
                         </h4>
 
-                        <p className="text-slate-400 text-xs line-clamp-2 mb-4">
-                          {prod.description}
-                        </p>
+                        
                       </div>
                     </div>
 
@@ -834,12 +926,18 @@ export default function Home() {
                     </div>
                   )}
 
-                  <p className="text-slate-300 text-xs leading-relaxed mb-6 max-h-40 overflow-y-auto">
-                    {selectedProduct.description}
-                  </p>
+                 
                 </div>
 
                 <div className="flex flex-col gap-3">
+                  <Link
+                  href={`/product/${selectedProduct.id}`}
+                  onClick={() => setSelectedProduct(null)}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-md"
+                >
+                  <span>Подробнее о товаре</span>
+                  <span>→</span>
+                </Link>
                   {/* 📄 Кнопка скачивания PDF паспорта */}
                   {selectedProduct.pdf_url && (
                     <a
