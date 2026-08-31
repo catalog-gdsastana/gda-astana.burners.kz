@@ -10,6 +10,7 @@ import {
   sortCatalogCategories,
   type CatalogCategory,
 } from '../catalog';
+import { sortManufacturers, type Manufacturer } from '../manufacturers';
 
 interface AdminProduct {
   id: string;
@@ -17,6 +18,7 @@ interface AdminProduct {
   article?: string | null;
   category?: string | null;
   category_id?: string | null;
+  manufacturer_id?: string | null;
   brand?: string | null;
   price?: string | number | null;
   description?: string | null;
@@ -33,6 +35,10 @@ export default function AdminPage() {
   const [catalogCategories, setCatalogCategories] = useState<CatalogCategory[]>(
     DEFAULT_CATALOG_CATEGORIES
   );
+  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
+  const [newManufacturerName, setNewManufacturerName] = useState('');
+  const [manufacturerMessage, setManufacturerMessage] = useState('');
+  const [manufacturerLoading, setManufacturerLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [title, setTitle] = useState('');
@@ -49,7 +55,7 @@ export default function AdminPage() {
   const fetchProducts = useCallback(async () => {
     const { data, error } = await supabase
       .from('products')
-      .select('id, title, article, category, category_id, brand, price, description');
+      .select('id, title, article, category, category_id, manufacturer_id, brand, price, description');
 
     if (error) {
       console.error('Ошибка загрузки товаров в админке:', error.message);
@@ -57,6 +63,20 @@ export default function AdminPage() {
     if (data) {
       setProducts(data as AdminProduct[]);
     }
+  }, []);
+
+  const fetchManufacturers = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('manufacturers')
+      .select('id, name, is_active')
+      .order('name');
+
+    if (error) {
+      console.error('Ошибка загрузки производителей:', error.message);
+      return;
+    }
+
+    setManufacturers(sortManufacturers((data || []) as Manufacturer[]));
   }, []);
 
   const fetchCatalogCategories = useCallback(async () => {
@@ -78,19 +98,21 @@ export default function AdminPage() {
   useEffect(() => {
     const loadAdminData = async () => {
       await Promise.resolve();
-      await Promise.all([fetchProducts(), fetchCatalogCategories()]);
+      await Promise.all([fetchProducts(), fetchCatalogCategories(), fetchManufacturers()]);
       if (localStorage.getItem('gds_admin_auth') === 'true') {
         setIsAuthenticated(true);
       }
     };
 
     void loadAdminData();
-  }, [fetchCatalogCategories, fetchProducts]);
+  }, [fetchCatalogCategories, fetchManufacturers, fetchProducts]);
 
   const mainCategories = catalogCategories.filter((item) => item.parent_id === null);
   const availableSubgroups = catalogCategories.filter(
     (item) => item.parent_id === mainCategoryId
   );
+  const activeManufacturers = manufacturers.filter((item) => item.is_active);
+  const isBurnerSection = mainCategoryId === DEFAULT_MAIN_CATEGORY_ID;
 
   const handleMainCategoryChange = (nextMainCategoryId: string) => {
     setMainCategoryId(nextMainCategoryId);
@@ -98,6 +120,57 @@ export default function AdminPage() {
       (item) => item.parent_id === nextMainCategoryId
     );
     setCategoryId(firstSubgroup?.id || '');
+  };
+
+  const handleAddManufacturer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newManufacturerName.trim();
+    if (!name) return;
+
+    const existing = manufacturers.find(
+      (item) => item.name.toLowerCase() === name.toLowerCase()
+    );
+    if (existing) {
+      setManufacturerMessage('Этот производитель уже есть в списке.');
+      setBrand(existing.name);
+      return;
+    }
+
+    setManufacturerLoading(true);
+    setManufacturerMessage('');
+    const { data, error } = await supabase
+      .from('manufacturers')
+      .insert({ name })
+      .select('id, name, is_active')
+      .single();
+    setManufacturerLoading(false);
+
+    if (error) {
+      setManufacturerMessage(`Ошибка: ${error.message}`);
+      return;
+    }
+
+    setNewManufacturerName('');
+    setBrand(data.name);
+    setManufacturerMessage(`✅ Производитель «${data.name}» добавлен.`);
+    await fetchManufacturers();
+  };
+
+  const handleToggleManufacturer = async (manufacturer: Manufacturer) => {
+    setManufacturerLoading(true);
+    setManufacturerMessage('');
+    const { error } = await supabase
+      .from('manufacturers')
+      .update({ is_active: !manufacturer.is_active })
+      .eq('id', manufacturer.id);
+    setManufacturerLoading(false);
+
+    if (error) {
+      setManufacturerMessage(`Ошибка: ${error.message}`);
+      return;
+    }
+
+    await fetchManufacturers();
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -173,15 +246,43 @@ export default function AdminPage() {
       return;
     }
 
-    const productPayload: Record<string, string> = {
+    if (isBurnerSection && !brand.trim()) {
+      setLoading(false);
+      setMessage('Ошибка: для горелки укажите производителя');
+      return;
+    }
+
+    let selectedManufacturer = manufacturers.find(
+      (item) => item.name.toLowerCase() === brand.trim().toLowerCase()
+    );
+
+    if (brand.trim() && !selectedManufacturer) {
+      const { data, error: manufacturerError } = await supabase
+        .from('manufacturers')
+        .insert({ name: brand.trim() })
+        .select('id, name, is_active')
+        .single();
+
+      if (manufacturerError) {
+        setLoading(false);
+        setMessage(`Ошибка при добавлении производителя: ${manufacturerError.message}`);
+        return;
+      }
+
+      selectedManufacturer = data as Manufacturer;
+      await fetchManufacturers();
+    }
+
+    const productPayload: Record<string, string | null> = {
       title: title.trim(),
       category: selectedSubgroup.slug,
       category_id: selectedSubgroup.id,
+      manufacturer_id: selectedManufacturer?.id || null,
+      brand: selectedManufacturer?.name || (brand.trim() || null),
       description: description.trim(),
     };
 
     if (article.trim()) productPayload.article = article.trim();
-    if (brand.trim()) productPayload.brand = brand.trim();
     if (price.trim()) productPayload.price = price.trim();
     
     let error;
@@ -264,6 +365,64 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-[#0F172A] text-slate-100 p-6 md:p-12">
       <div className="max-w-4xl mx-auto space-y-8">
+
+        {/* СПРАВОЧНИК ПРОИЗВОДИТЕЛЕЙ */}
+        <div className="bg-[#1E293B] rounded-3xl p-8 shadow-xl border border-slate-700/50">
+          <div className="mb-5">
+            <h2 className="text-xl font-extrabold text-white">Производители</h2>
+            <p className="text-xs text-slate-400 mt-1">
+              Добавляйте новую фирму в любой момент. Она появится в каталоге после добавления товара.
+            </p>
+          </div>
+
+          <form onSubmit={handleAddManufacturer} className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="text"
+              value={newManufacturerName}
+              onChange={(e) => setNewManufacturerName(e.target.value)}
+              placeholder="Например: Riello"
+              className="flex-1 bg-[#0F172A] border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-orange-500 placeholder-slate-500"
+            />
+            <button
+              type="submit"
+              disabled={manufacturerLoading || !newManufacturerName.trim()}
+              className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2.5 rounded-xl transition disabled:opacity-50"
+            >
+              + Добавить производителя
+            </button>
+          </form>
+
+          {manufacturerMessage && (
+            <p className={`mt-3 text-xs font-bold ${
+              manufacturerMessage.includes('Ошибка') ? 'text-red-400' : 'text-emerald-400'
+            }`}>
+              {manufacturerMessage}
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-2 mt-5">
+            {manufacturers.length === 0 ? (
+              <span className="text-xs text-slate-500">Производители пока не добавлены.</span>
+            ) : (
+              manufacturers.map((manufacturer) => (
+                <button
+                  key={manufacturer.id}
+                  type="button"
+                  disabled={manufacturerLoading}
+                  onClick={() => handleToggleManufacturer(manufacturer)}
+                  title={manufacturer.is_active ? 'Нажмите, чтобы скрыть' : 'Нажмите, чтобы вернуть'}
+                  className={`text-xs font-bold px-3 py-2 rounded-xl border transition ${
+                    manufacturer.is_active
+                      ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                      : 'bg-slate-800 text-slate-500 border-slate-700 line-through'
+                  }`}
+                >
+                  {manufacturer.name} · {manufacturer.is_active ? 'активен' : 'скрыт'}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
         
         {/* ФОРМА ДОБАВЛЕНИЯ / РЕДАКТИРОВАНИЯ */}
         <div className="bg-[#1E293B] rounded-3xl p-8 shadow-xl border border-slate-700/50">
@@ -349,7 +508,9 @@ export default function AdminPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Подгруппа *</label>
+                <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                  {isBurnerSection ? 'Вид горелки *' : 'Подгруппа *'}
+                </label>
                 <select
                   required
                   value={categoryId}
@@ -371,14 +532,26 @@ export default function AdminPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Бренд</label>
+                <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                  Производитель {isBurnerSection ? '*' : ''}
+                </label>
                 <input 
                   type="text" 
-                  value={brand} 
+                  list="manufacturer-options"
+                  required={isBurnerSection}
+                  value={brand}
                   onChange={(e) => setBrand(e.target.value)}
-                  placeholder="Baltur, Riello, Rio..."
+                  placeholder="Выберите или впишите новую фирму"
                   className="w-full bg-[#0F172A] border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-orange-500 placeholder-slate-500"
                 />
+                <datalist id="manufacturer-options">
+                  {activeManufacturers.map((manufacturer) => (
+                    <option key={manufacturer.id} value={manufacturer.name} />
+                  ))}
+                </datalist>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Если фирмы нет в списке, просто впишите её название — она добавится автоматически.
+                </p>
               </div>
 
               <div>

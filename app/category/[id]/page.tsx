@@ -2,8 +2,15 @@ import { supabase } from '../../supabase';
 import Link from 'next/link';
 import { DEFAULT_CATALOG_CATEGORIES } from '../../catalog';
 
-export default async function CategoryPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function CategoryPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ brand?: string }>;
+}) {
   const { id } = await params;
+  const { brand } = await searchParams;
   const { data: databaseCategory } = await supabase
     .from('catalog_categories')
     .select('id, name, slug, parent_id')
@@ -15,10 +22,16 @@ export default async function CategoryPage({ params }: { params: Promise<{ id: s
   const categoryTitle = selectedCategory?.name || 'Каталог оборудования';
 
   // Поле category оставлено как резерв для товаров, созданных до обновления базы.
-  const productsQuery = supabase.from('products').select('*');
-  const { data: products } = selectedCategory?.id
-    ? await productsQuery.or(`category_id.eq.${selectedCategory.id},category.eq.${id}`)
-    : await productsQuery.eq('category', id);
+  let productsQuery = supabase.from('products').select('*');
+  productsQuery = selectedCategory?.id
+    ? productsQuery.or(`category_id.eq.${selectedCategory.id},category.eq.${id}`)
+    : productsQuery.eq('category', id);
+
+  if (brand) {
+    productsQuery = productsQuery.ilike('brand', brand);
+  }
+
+  const { data: products } = await productsQuery;
 
   return (
     <main className="min-h-screen bg-gray-50 p-6 md:p-12">
@@ -30,7 +43,7 @@ export default async function CategoryPage({ params }: { params: Promise<{ id: s
 
         <header className="mb-8">
           <h1 className="text-3xl font-extrabold text-gray-900">
-            {categoryTitle}
+            {brand ? `${brand} — ${categoryTitle}` : categoryTitle}
           </h1>
           <p className="text-gray-500 mt-1">
             Найдено моделей: {products?.length || 0}

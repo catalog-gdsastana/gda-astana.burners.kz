@@ -6,10 +6,12 @@ import { supabase } from './supabase';
 import { translations } from './translations';
 import {
   DEFAULT_CATALOG_CATEGORIES,
+  DEFAULT_MAIN_CATEGORY_ID,
   getCategoryLabel,
   sortCatalogCategories,
   type CatalogCategory,
 } from './catalog';
+import { sortManufacturers, type Manufacturer } from './manufacturers';
 
 const WHATSAPP_NUMBER = '77000000000';
 const COMPANY_EMAIL = 'info@gds-astana.kz';
@@ -25,6 +27,7 @@ interface Product {
   in_stock?: boolean;
   category: string;
   category_id?: string;
+  manufacturer_id?: string;
   pdf_url?: string;       // 👈 Ссылка на PDF документ
   price?: number | string;
   image_url?: string;
@@ -40,6 +43,7 @@ export default function Home() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [openCategory, setOpenCategory] = useState<string | null>(null);
+  const [openManufacturer, setOpenManufacturer] = useState<string | null>(null);
 
   // 🌐 Язык интерфейса
   const [lang, setLang] = useState<'ru' | 'kz'>('ru');
@@ -49,6 +53,7 @@ export default function Home() {
   const [catalogCategories, setCatalogCategories] = useState<CatalogCategory[]>(
     DEFAULT_CATALOG_CATEGORIES
   );
+  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const currentYear = new Date().getFullYear();
 
@@ -91,20 +96,54 @@ export default function Home() {
       }
     }
 
+    async function fetchManufacturers() {
+      const { data, error } = await supabase
+        .from('manufacturers')
+        .select('id, name, is_active')
+        .eq('is_active', true)
+        .order('name');
+
+      if (data && !error) {
+        setManufacturers(sortManufacturers(data as Manufacturer[]));
+      }
+    }
+
     fetchProducts();
     fetchCatalogCategories();
+    fetchManufacturers();
   }, []);
 
   // 🏷️ Динамически получаем только существующие в базе бренды
   const availableBrands = useMemo(() => {
     const brandsSet = new Set<string>();
+    const activeManufacturerNames = new Set(
+      manufacturers.map((item) => item.name.trim().toLowerCase())
+    );
     products.forEach((p) => {
-      if (p.brand && p.brand.trim() !== '') {
+      if (
+        p.brand &&
+        p.brand.trim() !== '' &&
+        (manufacturers.length === 0 || activeManufacturerNames.has(p.brand.trim().toLowerCase()))
+      ) {
         brandsSet.add(p.brand.trim());
       }
     });
-    return Array.from(brandsSet).sort();
-  }, [products]);
+    return Array.from(brandsSet).sort((a, b) => a.localeCompare(b, 'ru'));
+  }, [manufacturers, products]);
+
+  const burnerBrands = useMemo(() => {
+    return availableBrands.filter((brand) =>
+      products.some((product) => {
+        const subgroup =
+          catalogCategories.find((item) => item.id === product.category_id) ||
+          catalogCategories.find((item) => item.slug === product.category);
+        return (
+          subgroup?.parent_id === DEFAULT_MAIN_CATEGORY_ID &&
+          product.brand?.trim().toLowerCase() === brand.toLowerCase()
+        );
+      })
+    );
+  }, [availableBrands, catalogCategories, products]);
 
   const mainCategories = useMemo(
     () => catalogCategories.filter((item) => item.parent_id === null),
@@ -134,10 +173,16 @@ export default function Home() {
 
   const toggleCategory = (catId: string) => {
     setOpenCategory(openCategory === catId ? null : catId);
+    setOpenManufacturer(null);
+  };
+
+  const toggleManufacturer = (name: string) => {
+    setOpenManufacturer(openManufacturer === name ? null : name);
   };
 
   const handleMainCategoryFilter = (mainCategoryId: string) => {
     setSelectedMainCategory(mainCategoryId);
+    setSelectedBrand('all');
     setSelectedCategory('all');
   };
 
@@ -235,6 +280,17 @@ export default function Home() {
         catalogCategories.find((item) => item.slug === prod.category);
       const productMainCategory = productSubgroup?.parent_id;
 
+      if (
+        prod.brand &&
+        manufacturers.length > 0 &&
+        !manufacturers.some(
+          (manufacturer) =>
+            manufacturer.name.trim().toLowerCase() === prod.brand?.trim().toLowerCase()
+        )
+      ) {
+        return false;
+      }
+
       // Поиск по тексту
       const query = searchQuery.toLowerCase().trim();
       if (query) {
@@ -280,6 +336,7 @@ export default function Home() {
   }, [
     products,
     catalogCategories,
+    manufacturers,
     searchQuery,
     selectedBrand,
     selectedMainCategory,
@@ -364,7 +421,76 @@ export default function Home() {
 
                         {isCatOpen && (
                           <div className="pl-6 pr-1 py-1 flex flex-col gap-1 border-l border-gray-200 ml-4 my-1">
-                            {subgroups.length > 0 ? (
+                            {mainCategory.id === DEFAULT_MAIN_CATEGORY_ID ? (
+                              <>
+                                {burnerBrands.map((brand) => {
+                                  const isBrandOpen = openManufacturer === brand;
+                                  const brandSubgroups = subgroups.filter((subgroup) =>
+                                    products.some((product) => {
+                                      const productSubgroup = getProductSubgroup(product);
+                                      return (
+                                        productSubgroup?.id === subgroup.id &&
+                                        product.brand?.trim().toLowerCase() === brand.toLowerCase()
+                                      );
+                                    })
+                                  );
+
+                                  return (
+                                    <div key={brand}>
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleManufacturer(brand)}
+                                        className="w-full flex items-center justify-between text-xs text-slate-700 hover:text-orange-600 py-1.5 px-2 rounded hover:bg-orange-50 transition font-bold"
+                                      >
+                                        <span className="truncate">• {brand}</span>
+                                        <span className={`text-[9px] transition-transform ${isBrandOpen ? 'rotate-180' : ''}`}>
+                                          ▼
+                                        </span>
+                                      </button>
+
+                                      {isBrandOpen && (
+                                        <div className="ml-3 pl-3 border-l border-gray-200 flex flex-col">
+                                          {brandSubgroups.map((subgroup) => {
+                                            const count = products.filter((product) => {
+                                              const productSubgroup = getProductSubgroup(product);
+                                              return (
+                                                productSubgroup?.id === subgroup.id &&
+                                                product.brand?.trim().toLowerCase() === brand.toLowerCase()
+                                              );
+                                            }).length;
+
+                                            return (
+                                              <Link
+                                                key={`${brand}-${subgroup.id}`}
+                                                href={{
+                                                  pathname: `/category/${subgroup.slug}`,
+                                                  query: { brand },
+                                                }}
+                                                onClick={() => setIsMenuOpen(false)}
+                                                className="text-[11px] text-slate-500 hover:text-orange-600 py-1.5 px-2 rounded hover:bg-orange-50 transition flex items-center justify-between gap-2"
+                                              >
+                                                <span className="truncate">{subgroup.name}</span>
+                                                <span className="text-[9px] text-slate-400">{count}</span>
+                                              </Link>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                <a
+                                  href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent('Здравствуйте! Нужна горелка другого производителя. Помогите подобрать оборудование.')}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={() => setIsMenuOpen(false)}
+                                  className="text-xs text-emerald-700 hover:text-emerald-800 py-2 px-2 rounded hover:bg-emerald-50 transition block font-bold"
+                                >
+                                  + Другой производитель — под заказ
+                                </a>
+                              </>
+                            ) : subgroups.length > 0 ? (
                               subgroups.map((subgroup) => {
                                 const subgroupProductCount = products.filter((product) => {
                                   const productSubgroup = getProductSubgroup(product);
@@ -610,14 +736,16 @@ export default function Home() {
             {/* ПОДГРУППА */}
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
-                Подгруппа
+                {selectedMainCategory === DEFAULT_MAIN_CATEGORY_ID ? 'Вид горелки' : 'Подгруппа'}
               </label>
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
                 className="w-full bg-slate-800 border border-slate-700 text-slate-100 text-xs font-bold rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="all">Все подгруппы</option>
+                <option value="all">
+                  {selectedMainCategory === DEFAULT_MAIN_CATEGORY_ID ? 'Все виды горелок' : 'Все подгруппы'}
+                </option>
                 {visibleSubgroups.map((category) => (
                   <option key={category.id} value={category.id}>
                     {category.name}
