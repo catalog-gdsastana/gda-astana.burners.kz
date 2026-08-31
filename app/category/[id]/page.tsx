@@ -53,8 +53,26 @@ export default async function CategoryPage({
         {/* Сетка товаров */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {products && products.length > 0 ? (
-            products.map((item, index) => (
+            products.map((item, index) => {
+              const mainImage =
+                Array.isArray(item.images) && item.images.length > 0
+                  ? item.images[0]
+                  : item.image_url || null;
+
+              return (
               <div key={item.id || index} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition">
+                <div className="h-44 mb-5 rounded-xl bg-gray-100 overflow-hidden flex items-center justify-center">
+                  {mainImage ? (
+                    <img
+                      src={mainImage}
+                      alt={item.title}
+                      className="w-full h-full object-contain p-3"
+                    />
+                  ) : (
+                    <span className="text-sm text-gray-400">📷 Нет фото</span>
+                  )}
+                </div>
+
                 <div className="flex justify-between items-start mb-4">
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${item.in_stock ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                     {item.in_stock ? 'В наличии' : 'Под заказ'}
@@ -70,13 +88,17 @@ export default async function CategoryPage({
                   {item.description}
                 </p>
 
+                <p className="text-xs uppercase tracking-wider text-gray-400">Цена</p>
+                <p className="text-lg font-extrabold text-blue-600 mb-5">По запросу</p>
+
                 <div className="pt-4 border-t border-gray-100 flex gap-2">
                   <button className="flex-1 bg-gray-900 hover:bg-gray-800 text-white font-medium py-2 rounded-xl text-sm transition">
                     {item.pdf_url ? 'Скачать Паспорт (PDF)' : 'Подробнее'}
                   </button>
                 </div>
               </div>
-            ))
+              );
+            })
           ) : (
             <div className="col-span-full bg-white p-12 rounded-2xl text-center border">
               <p className="text-gray-500 text-lg">

@@ -20,8 +20,8 @@ interface AdminProduct {
   category_id?: string | null;
   manufacturer_id?: string | null;
   brand?: string | null;
-  price?: string | number | null;
   description?: string | null;
+  image_url?: string | null;
 }
 
 export default function AdminPage() {
@@ -46,8 +46,10 @@ export default function AdminPage() {
   const [mainCategoryId, setMainCategoryId] = useState(DEFAULT_MAIN_CATEGORY_ID);
   const [categoryId, setCategoryId] = useState(DEFAULT_SUBGROUP_ID);
   const [brand, setBrand] = useState('');
-  const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -55,7 +57,7 @@ export default function AdminPage() {
   const fetchProducts = useCallback(async () => {
     const { data, error } = await supabase
       .from('products')
-      .select('id, title, article, category, category_id, manufacturer_id, brand, price, description');
+      .select('id, title, article, category, category_id, manufacturer_id, brand, description, image_url');
 
     if (error) {
       console.error('Ошибка загрузки товаров в админке:', error.message);
@@ -197,8 +199,10 @@ export default function AdminPage() {
     setMainCategoryId(DEFAULT_MAIN_CATEGORY_ID);
     setCategoryId(DEFAULT_SUBGROUP_ID);
     setBrand('');
-    setPrice('');
     setDescription('');
+    setImageUrl('');
+    setImageFile(null);
+    setImagePreview('');
   };
 
   const handleEdit = (prod: AdminProduct) => {
@@ -212,8 +216,10 @@ export default function AdminPage() {
     setMainCategoryId(selectedSubgroup?.parent_id || DEFAULT_MAIN_CATEGORY_ID);
     setCategoryId(selectedSubgroup?.id || DEFAULT_SUBGROUP_ID);
     setBrand(prod.brand || '');
-    setPrice(prod.price === null || prod.price === undefined ? '' : String(prod.price));
     setDescription(prod.description || '');
+    setImageUrl(prod.image_url || '');
+    setImageFile(null);
+    setImagePreview(prod.image_url || '');
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -233,12 +239,55 @@ export default function AdminPage() {
     }
   };
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      e.target.value = '';
+      setImageFile(null);
+      setMessage('Ошибка: выберите изображение JPG, PNG или WebP');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      e.target.value = '';
+      setImageFile(null);
+      setMessage('Ошибка: размер фотографии не должен превышать 5 МБ');
+      return;
+    }
+
+    setMessage('');
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const uploadProductImage = async () => {
+    if (!imageFile) return imageUrl || null;
+
+    const extension = imageFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const filePath = `products/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+    const { error } = await supabase.storage
+      .from('product-images')
+      .upload(filePath, imageFile, {
+        cacheControl: '3600',
+        contentType: imageFile.type,
+        upsert: false,
+      });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return supabase.storage.from('product-images').getPublicUrl(filePath).data.publicUrl;
+  };
+
  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage('');
 
-    // Собираем ТОЛЬКО текстовые поля (БЕЗ image_url и pdf_url)
     const selectedSubgroup = catalogCategories.find((item) => item.id === categoryId);
     if (!selectedSubgroup || !selectedSubgroup.parent_id) {
       setLoading(false);
@@ -273,6 +322,19 @@ export default function AdminPage() {
       await fetchManufacturers();
     }
 
+    let uploadedImageUrl: string | null;
+    try {
+      uploadedImageUrl = await uploadProductImage();
+    } catch (uploadError) {
+      setLoading(false);
+      setMessage(
+        `Ошибка при загрузке фотографии: ${
+          uploadError instanceof Error ? uploadError.message : 'неизвестная ошибка'
+        }`
+      );
+      return;
+    }
+
     const productPayload: Record<string, string | null> = {
       title: title.trim(),
       category: selectedSubgroup.slug,
@@ -280,10 +342,10 @@ export default function AdminPage() {
       manufacturer_id: selectedManufacturer?.id || null,
       brand: selectedManufacturer?.name || (brand.trim() || null),
       description: description.trim(),
+      image_url: uploadedImageUrl,
     };
 
     if (article.trim()) productPayload.article = article.trim();
-    if (price.trim()) productPayload.price = price.trim();
     
     let error;
 
@@ -530,7 +592,7 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
               <div>
                 <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
                   Производитель {isBurnerSection ? '*' : ''}
@@ -553,17 +615,6 @@ export default function AdminPage() {
                   Если фирмы нет в списке, просто впишите её название — она добавится автоматически.
                 </p>
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Цена (₸)</label>
-                <input 
-                  type="text" 
-                  value={price} 
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="450000"
-                  className="w-full bg-[#0F172A] border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-orange-500 placeholder-slate-500"
-                />
-              </div>
             </div>
 
             <div>
@@ -575,6 +626,46 @@ export default function AdminPage() {
                 placeholder="Технические характеристики..."
                 className="w-full bg-[#0F172A] border border-slate-700 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-orange-500 placeholder-slate-500"
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-300 uppercase mb-2">
+                Фотография товара
+              </label>
+              <div className="rounded-2xl border border-dashed border-slate-600 bg-[#0F172A] p-4">
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleImageSelect}
+                  className="block w-full text-xs text-slate-300 file:mr-4 file:rounded-xl file:border-0 file:bg-orange-500 file:px-4 file:py-2.5 file:font-bold file:text-white hover:file:bg-orange-600"
+                />
+                <p className="mt-2 text-[10px] text-slate-500">
+                  JPG, PNG или WebP, размером до 5 МБ. Фото загрузится при сохранении товара.
+                </p>
+
+                {imagePreview && (
+                  <div className="mt-4 flex flex-col sm:flex-row items-start gap-4">
+                    <div className="h-40 w-full sm:w-56 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 p-2">
+                      <img
+                        src={imagePreview}
+                        alt="Предпросмотр фотографии товара"
+                        className="h-full w-full object-contain"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImageFile(null);
+                        setImageUrl('');
+                        setImagePreview('');
+                      }}
+                      className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-bold text-red-400 hover:bg-red-500/20"
+                    >
+                      Убрать фото
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <button
@@ -600,17 +691,30 @@ export default function AdminPage() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-700/60 text-[10px] text-slate-400 uppercase tracking-wider">
+                    <th className="pb-3 px-2">Фото</th>
                     <th className="pb-3 px-2">Товар</th>
                     <th className="pb-3 px-2">Бренд</th>
                     <th className="pb-3 px-2">Раздел</th>
                     <th className="pb-3 px-2">Подгруппа</th>
-                    <th className="pb-3 px-2">Цена</th>
                     <th className="pb-3 px-2 text-right">Действия</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/40 text-xs">
                   {products.map((prod) => (
                     <tr key={prod.id} className="hover:bg-slate-700/30 transition">
+                      <td className="py-3 px-2">
+                        <div className="h-12 w-12 overflow-hidden rounded-lg border border-slate-700 bg-slate-900 flex items-center justify-center">
+                          {prod.image_url ? (
+                            <img
+                              src={prod.image_url}
+                              alt={prod.title}
+                              className="h-full w-full object-contain"
+                            />
+                          ) : (
+                            <span className="text-slate-500">📷</span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-3 px-2 font-bold text-white">
                         {prod.title}
                         {prod.article && <span className="block text-[10px] font-normal text-slate-400">Арт: {prod.article}</span>}
@@ -633,7 +737,6 @@ export default function AdminPage() {
                           prod.category || undefined
                         )}
                       </td>
-                      <td className="py-3 px-2 font-bold text-orange-400">{prod.price ? `${prod.price} ₸` : 'По запросу'}</td>
                       <td className="py-3 px-2 text-right space-x-2">
                         <button
                           onClick={() => handleEdit(prod)}

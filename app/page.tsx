@@ -12,9 +12,7 @@ import {
   type CatalogCategory,
 } from './catalog';
 import { sortManufacturers, type Manufacturer } from './manufacturers';
-
-const WHATSAPP_NUMBER = '77000000000';
-const COMPANY_EMAIL = 'info@gds-astana.kz';
+import { COMPANY_EMAIL, WHATSAPP_NUMBER } from './site-config';
 
 interface Product {
   id: string;
@@ -29,7 +27,6 @@ interface Product {
   category_id?: string;
   manufacturer_id?: string;
   pdf_url?: string;       // 👈 Ссылка на PDF документ
-  price?: number | string;
   image_url?: string;
   images?: string[];
 }
@@ -75,6 +72,11 @@ export default function Home() {
   // 🛒 Смета
   const [estimate, setEstimate] = useState<EstimateItem[]>([]);
   const [isEstimateOpen, setIsEstimateOpen] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerCity, setCustomerCity] = useState('');
+  const [customerComment, setCustomerComment] = useState('');
+  const [requestFormError, setRequestFormError] = useState('');
 
   useEffect(() => {
     async function fetchProducts() {
@@ -186,14 +188,6 @@ export default function Home() {
     setSelectedCategory('all');
   };
 
-  const formatPrice = (price?: number | string) => {
-    if (!price) return t.priceOnRequest;
-    if (typeof price === 'number') {
-      return `${price.toLocaleString('ru-RU')} ₸`;
-    }
-    return price.includes('₸') ? price : `${price} ₸`;
-  };
-
   const getProductImages = (prod: Product): string[] => {
     if (prod.images && Array.isArray(prod.images) && prod.images.length > 0) {
       return prod.images;
@@ -242,16 +236,30 @@ export default function Home() {
   };
 
   const generateEstimateText = () => {
-    let text = `Здравствуйте! Прошу предоставить коммерческое предложение по следующей смете:\n\n`;
+    let text = `Здравствуйте! Прошу рассчитать стоимость оборудования.\n\n`;
+    text += `Имя: ${customerName.trim()}\n`;
+    text += `Телефон: ${customerPhone.trim()}\n`;
+    if (customerCity.trim()) text += `Город / объект: ${customerCity.trim()}\n`;
+    if (customerComment.trim()) text += `Комментарий: ${customerComment.trim()}\n`;
+    text += `\nОборудование:\n`;
     estimate.forEach((item, i) => {
       text += `${i + 1}. ${item.product.title}`;
       if (item.product.article) text += ` (Арт: ${item.product.article})`;
       text += ` — ${item.quantity} шт.`;
-      if (item.product.price) text += ` [${formatPrice(item.product.price)}]`;
       text += `\n`;
     });
-    text += `\nЖду расчет стоимости и наличие.`;
+    text += `\nПрошу сообщить стоимость, срок поставки и подобрать оборудование при необходимости.`;
     return text;
+  };
+
+  const handleRequestLinkClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!customerName.trim() || !customerPhone.trim()) {
+      e.preventDefault();
+      setRequestFormError('Укажите имя и номер телефона.');
+      return;
+    }
+
+    setRequestFormError('');
   };
 
   const getEstimateWhatsAppLink = () => {
@@ -851,7 +859,7 @@ export default function Home() {
                         <div>
                           <p className="text-[10px] text-slate-400 uppercase tracking-wider">Цена</p>
                           <p className="text-base font-extrabold text-blue-400">
-                            {formatPrice(prod.price)}
+                            {t.priceOnRequest}
                           </p>
                         </div>
                         <button
@@ -941,7 +949,7 @@ export default function Home() {
                     <div>
                       <h4 className="text-xs font-bold text-slate-100">{item.product.title}</h4>
                       <p className="text-xs font-extrabold text-blue-400 mt-1">
-                        {formatPrice(item.product.price)}
+                        {t.priceOnRequest}
                       </p>
                     </div>
 
@@ -976,11 +984,84 @@ export default function Home() {
               <p className="text-xs text-slate-400 text-center py-8">Смета пока пуста.</p>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-slate-800">
+            <div className="border-t border-slate-800 pt-5">
+              <h4 className="text-sm font-extrabold text-slate-100 mb-3">Ваши данные</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Имя *
+                  </label>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => {
+                      setCustomerName(e.target.value);
+                      setRequestFormError('');
+                    }}
+                    placeholder="Как к вам обращаться"
+                    autoComplete="name"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-3 text-xs text-white outline-none focus:border-orange-500 placeholder:text-slate-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Телефон *
+                  </label>
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    value={customerPhone}
+                    onChange={(e) => {
+                      setCustomerPhone(e.target.value);
+                      setRequestFormError('');
+                    }}
+                    placeholder="+7 700 000 00 00"
+                    autoComplete="tel"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-3 text-xs text-white outline-none focus:border-orange-500 placeholder:text-slate-600"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Город или объект
+                  </label>
+                  <input
+                    type="text"
+                    value={customerCity}
+                    onChange={(e) => setCustomerCity(e.target.value)}
+                    placeholder="Например: Шымкент, производственная котельная"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-3 text-xs text-white outline-none focus:border-orange-500 placeholder:text-slate-600"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Комментарий
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={customerComment}
+                    onChange={(e) => setCustomerComment(e.target.value)}
+                    placeholder="Площадь объекта, мощность котла или дополнительная информация"
+                    className="w-full resize-none rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-3 text-xs text-white outline-none focus:border-orange-500 placeholder:text-slate-600"
+                  />
+                </div>
+              </div>
+
+              {requestFormError && (
+                <p className="mt-3 rounded-lg border border-red-800/50 bg-red-950/40 px-3 py-2 text-xs font-bold text-red-400">
+                  {requestFormError}
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4">
               <a
                 href={getEstimateWhatsAppLink()}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={handleRequestLinkClick}
                 className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-md"
               >
                 <span>💬</span>
@@ -989,6 +1070,7 @@ export default function Home() {
 
               <a
                 href={getEstimateEmailLink()}
+                onClick={handleRequestLinkClick}
                 className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-md"
               >
                 <span>✉️</span>
@@ -1046,7 +1128,8 @@ export default function Home() {
                   )}
 
                   <h3 className="text-2xl font-extrabold text-slate-100 mb-2">{selectedProduct.title}</h3>
-                  <p className="text-2xl font-black text-blue-400 mb-4">{formatPrice(selectedProduct.price)}</p>
+                  <p className="text-xs text-slate-400 uppercase tracking-wider">Цена</p>
+                  <p className="text-2xl font-black text-blue-400 mb-4">{t.priceOnRequest}</p>
 
                   {selectedProduct.power_kw && (
                     <div className="mb-4 p-3 bg-slate-800/80 rounded-xl text-xs space-y-1 text-slate-300 border border-slate-700">
