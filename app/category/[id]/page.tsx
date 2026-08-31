@@ -106,9 +106,12 @@ export default async function CategoryPage({
                 <p className="text-lg font-extrabold text-blue-600 mb-5">По запросу</p>
 
                 <div className="pt-4 border-t border-gray-100 flex gap-2">
-                  <button className="flex-1 bg-gray-900 hover:bg-gray-800 text-white font-medium py-2 rounded-xl text-sm transition">
-                    {item.pdf_url ? 'Скачать Паспорт (PDF)' : 'Подробнее'}
-                  </button>
+                  <Link
+                    href={`/product/${item.id}`}
+                    className="flex-1 bg-gray-900 hover:bg-gray-800 text-white text-center font-medium py-2 rounded-xl text-sm transition"
+                  >
+                    Подробнее о товаре
+                  </Link>
                 </div>
               </div>
               );
