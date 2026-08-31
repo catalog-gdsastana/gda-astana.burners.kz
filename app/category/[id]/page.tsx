@@ -58,6 +58,8 @@ export default async function CategoryPage({
                 Array.isArray(item.images) && item.images.length > 0
                   ? item.images[0]
                   : item.image_url || null;
+              const mainVideo =
+                Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : null;
 
               return (
               <div key={item.id || index} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition">
@@ -68,8 +70,20 @@ export default async function CategoryPage({
                       alt={item.title}
                       className="w-full h-full object-contain p-3"
                     />
+                  ) : mainVideo ? (
+                    <div className="relative h-full w-full">
+                      <video
+                        src={mainVideo}
+                        className="h-full w-full object-contain p-3"
+                        muted
+                        preload="metadata"
+                      />
+                      <span className="absolute bottom-2 right-2 rounded bg-gray-900/80 px-2 py-1 text-[10px] font-bold text-white">
+                        🎬 Видео
+                      </span>
+                    </div>
                   ) : (
-                    <span className="text-sm text-gray-400">📷 Нет фото</span>
+                    <span className="text-sm text-gray-400">📷 Нет фото и видео</span>
                   )}
                 </div>
 

@@ -29,6 +29,12 @@ interface Product {
   pdf_url?: string;       // 👈 Ссылка на PDF документ
   image_url?: string;
   images?: string[];
+  videos?: string[];
+}
+
+interface ProductMedia {
+  url: string;
+  kind: 'image' | 'video';
 }
 
 interface EstimateItem {
@@ -194,6 +200,17 @@ export default function Home() {
     }
     return prod.image_url ? [prod.image_url] : [];
   };
+
+  const getProductMedia = (prod: Product): ProductMedia[] => [
+    ...getProductImages(prod).map((url) => ({ url, kind: 'image' as const })),
+    ...(Array.isArray(prod.videos) ? prod.videos : []).map((url) => ({
+      url,
+      kind: 'video' as const,
+    })),
+  ];
+
+  const selectedProductMedia = selectedProduct ? getProductMedia(selectedProduct) : [];
+  const activeProductMedia = selectedProductMedia[activeImageIndex] || null;
 
   const getProductKey = (prod: Product) => prod.id || prod.article || prod.title;
 
@@ -807,6 +824,7 @@ export default function Home() {
               {filteredProducts.map((prod, index) => {
                 const productImages = getProductImages(prod);
                 const mainImage = productImages[0] || null;
+                const mainVideo = Array.isArray(prod.videos) ? prod.videos[0] || null : null;
                 const added = isInEstimate(prod);
 
                 return (
@@ -820,6 +838,18 @@ export default function Home() {
                             alt={prod.title}
                             className="w-full h-full object-contain p-4 group-hover:scale-105 transition duration-300"
                           />
+                        ) : mainVideo ? (
+                          <div className="relative h-full w-full">
+                            <video
+                              src={mainVideo}
+                              className="h-full w-full object-contain p-4"
+                              muted
+                              preload="metadata"
+                            />
+                            <span className="absolute bottom-3 right-3 rounded-lg bg-slate-950/80 px-2.5 py-1 text-[10px] font-bold text-white">
+                              🎬 Видео
+                            </span>
+                          </div>
                         ) : (
                           <div className="flex flex-col items-center justify-center text-slate-500">
                             <span className="text-3xl mb-1">📷</span>
@@ -1101,16 +1131,48 @@ export default function Home() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="flex flex-col gap-3">
                 <div className="w-full h-64 bg-slate-800 rounded-2xl overflow-hidden flex items-center justify-center border border-slate-700 p-4 relative">
-                  {getProductImages(selectedProduct).length > 0 ? (
+                  {activeProductMedia?.kind === 'image' ? (
                     <img
-                      src={getProductImages(selectedProduct)[activeImageIndex]}
+                      src={activeProductMedia.url}
                       alt={selectedProduct.title}
                       className="w-full h-full object-contain"
                     />
+                  ) : activeProductMedia?.kind === 'video' ? (
+                    <video
+                      key={activeProductMedia.url}
+                      src={activeProductMedia.url}
+                      className="w-full h-full object-contain"
+                      controls
+                      preload="metadata"
+                    />
                   ) : (
-                    <span className="text-xs text-slate-400">Нет фото</span>
+                    <span className="text-xs text-slate-400">Нет фото и видео</span>
                   )}
                 </div>
+
+                {selectedProductMedia.length > 1 && (
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {selectedProductMedia.map((media, index) => (
+                      <button
+                        key={`${media.kind}-${media.url}`}
+                        type="button"
+                        onClick={() => setActiveImageIndex(index)}
+                        className={`relative h-16 w-20 shrink-0 overflow-hidden rounded-lg border-2 bg-slate-800 p-1 transition ${
+                          activeImageIndex === index
+                            ? 'border-orange-500'
+                            : 'border-slate-700 hover:border-slate-500'
+                        }`}
+                        aria-label={`${media.kind === 'image' ? 'Фотография' : 'Видео'} ${index + 1}`}
+                      >
+                        {media.kind === 'image' ? (
+                          <img src={media.url} alt="" className="h-full w-full object-contain" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xl">🎬</div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col justify-between">

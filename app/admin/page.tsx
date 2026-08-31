@@ -22,6 +22,15 @@ interface AdminProduct {
   brand?: string | null;
   description?: string | null;
   image_url?: string | null;
+  images?: string[] | null;
+  videos?: string[] | null;
+}
+
+interface PendingMedia {
+  id: string;
+  file: File;
+  previewUrl: string;
+  kind: 'image' | 'video';
 }
 
 export default function AdminPage() {
@@ -47,9 +56,9 @@ export default function AdminPage() {
   const [categoryId, setCategoryId] = useState(DEFAULT_SUBGROUP_ID);
   const [brand, setBrand] = useState('');
   const [description, setDescription] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState('');
+  const [existingImages, setExistingImages] = useState<string[]>([]);
+  const [existingVideos, setExistingVideos] = useState<string[]>([]);
+  const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -57,7 +66,7 @@ export default function AdminPage() {
   const fetchProducts = useCallback(async () => {
     const { data, error } = await supabase
       .from('products')
-      .select('id, title, article, category, category_id, manufacturer_id, brand, description, image_url');
+      .select('id, title, article, category, category_id, manufacturer_id, brand, description, image_url, images, videos');
 
     if (error) {
       console.error('Ошибка загрузки товаров в админке:', error.message);
@@ -200,9 +209,9 @@ export default function AdminPage() {
     setCategoryId(DEFAULT_SUBGROUP_ID);
     setBrand('');
     setDescription('');
-    setImageUrl('');
-    setImageFile(null);
-    setImagePreview('');
+    setExistingImages([]);
+    setExistingVideos([]);
+    setPendingMedia([]);
   };
 
   const handleEdit = (prod: AdminProduct) => {
@@ -217,9 +226,15 @@ export default function AdminPage() {
     setCategoryId(selectedSubgroup?.id || DEFAULT_SUBGROUP_ID);
     setBrand(prod.brand || '');
     setDescription(prod.description || '');
-    setImageUrl(prod.image_url || '');
-    setImageFile(null);
-    setImagePreview(prod.image_url || '');
+    setExistingImages(
+      prod.images && prod.images.length > 0
+        ? prod.images
+        : prod.image_url
+          ? [prod.image_url]
+          : []
+    );
+    setExistingVideos(prod.videos || []);
+    setPendingMedia([]);
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -239,48 +254,105 @@ export default function AdminPage() {
     }
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    if (selectedFiles.length === 0) return;
 
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
-      e.target.value = '';
-      setImageFile(null);
-      setMessage('Ошибка: выберите изображение JPG, PNG или WebP');
-      return;
-    }
+    const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const allowedVideoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
+    const allowedImageExtensions = ['jpg', 'jpeg', 'png', 'webp'];
+    const allowedVideoExtensions = ['mp4', 'webm', 'mov'];
+    let imageCount =
+      existingImages.length + pendingMedia.filter((item) => item.kind === 'image').length;
+    let videoCount =
+      existingVideos.length + pendingMedia.filter((item) => item.kind === 'video').length;
+    const nextMedia: PendingMedia[] = [];
+    const errors: string[] = [];
 
-    if (file.size > 5 * 1024 * 1024) {
-      e.target.value = '';
-      setImageFile(null);
-      setMessage('Ошибка: размер фотографии не должен превышать 5 МБ');
-      return;
-    }
+    selectedFiles.forEach((file) => {
+      const extension = file.name.split('.').pop()?.toLowerCase() || '';
+      const isImage =
+        allowedImageTypes.includes(file.type) || allowedImageExtensions.includes(extension);
+      const isVideo =
+        allowedVideoTypes.includes(file.type) || allowedVideoExtensions.includes(extension);
 
-    setMessage('');
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
+      if (!isImage && !isVideo) {
+        errors.push(`«${file.name}»: неподдерживаемый формат`);
+        return;
+      }
+
+      if (isImage && file.size > 5 * 1024 * 1024) {
+        errors.push(`«${file.name}»: фотография больше 5 МБ`);
+        return;
+      }
+
+      if (isVideo && file.size > 50 * 1024 * 1024) {
+        errors.push(`«${file.name}»: видео больше 50 МБ`);
+        return;
+      }
+
+      if (isImage && imageCount >= 10) {
+        errors.push('Можно добавить не более 10 фотографий');
+        return;
+      }
+
+      if (isVideo && videoCount >= 2) {
+        errors.push('Можно добавить не более 2 видео');
+        return;
+      }
+
+      if (isImage) imageCount += 1;
+      if (isVideo) videoCount += 1;
+      nextMedia.push({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+        kind: isImage ? 'image' : 'video',
+      });
+    });
+
+    setPendingMedia((current) => [...current, ...nextMedia]);
+    setMessage(errors.length > 0 ? `Ошибка: ${Array.from(new Set(errors)).join('. ')}` : '');
+    e.target.value = '';
   };
 
-  const uploadProductImage = async () => {
-    if (!imageFile) return imageUrl || null;
+  const uploadProductMedia = async () => {
+    const uploadedImages = [...existingImages];
+    const uploadedVideos = [...existingVideos];
 
-    const extension = imageFile.name.split('.').pop()?.toLowerCase() || 'jpg';
-    const filePath = `products/${Date.now()}-${crypto.randomUUID()}.${extension}`;
-    const { error } = await supabase.storage
-      .from('product-images')
-      .upload(filePath, imageFile, {
-        cacheControl: '3600',
-        contentType: imageFile.type,
-        upsert: false,
-      });
+    for (const media of pendingMedia) {
+      const fallbackExtension = media.kind === 'image' ? 'jpg' : 'mp4';
+      const extension = media.file.name.split('.').pop()?.toLowerCase() || fallbackExtension;
+      const folder = media.kind === 'image' ? 'images' : 'videos';
+      const filePath = `products/${folder}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+      const fallbackContentTypes: Record<string, string> = {
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        webp: 'image/webp',
+        mp4: 'video/mp4',
+        webm: 'video/webm',
+        mov: 'video/quicktime',
+      };
+      const { error } = await supabase.storage
+        .from('product-images')
+        .upload(filePath, media.file, {
+          cacheControl: '3600',
+          contentType: media.file.type || fallbackContentTypes[extension],
+          upsert: false,
+        });
 
-    if (error) {
-      throw new Error(error.message);
+      if (error) {
+        throw new Error(`${media.file.name}: ${error.message}`);
+      }
+
+      const publicUrl = supabase.storage.from('product-images').getPublicUrl(filePath).data
+        .publicUrl;
+      if (media.kind === 'image') uploadedImages.push(publicUrl);
+      else uploadedVideos.push(publicUrl);
     }
 
-    return supabase.storage.from('product-images').getPublicUrl(filePath).data.publicUrl;
+    return { uploadedImages, uploadedVideos };
   };
 
  const handleSubmit = async (e: React.FormEvent) => {
@@ -322,27 +394,29 @@ export default function AdminPage() {
       await fetchManufacturers();
     }
 
-    let uploadedImageUrl: string | null;
+    let uploadedMedia: { uploadedImages: string[]; uploadedVideos: string[] };
     try {
-      uploadedImageUrl = await uploadProductImage();
+      uploadedMedia = await uploadProductMedia();
     } catch (uploadError) {
       setLoading(false);
       setMessage(
-        `Ошибка при загрузке фотографии: ${
+        `Ошибка при загрузке файлов: ${
           uploadError instanceof Error ? uploadError.message : 'неизвестная ошибка'
         }`
       );
       return;
     }
 
-    const productPayload: Record<string, string | null> = {
+    const productPayload: Record<string, string | string[] | null> = {
       title: title.trim(),
       category: selectedSubgroup.slug,
       category_id: selectedSubgroup.id,
       manufacturer_id: selectedManufacturer?.id || null,
       brand: selectedManufacturer?.name || (brand.trim() || null),
       description: description.trim(),
-      image_url: uploadedImageUrl,
+      image_url: uploadedMedia.uploadedImages[0] || null,
+      images: uploadedMedia.uploadedImages,
+      videos: uploadedMedia.uploadedVideos,
     };
 
     if (article.trim()) productPayload.article = article.trim();
@@ -630,39 +704,84 @@ export default function AdminPage() {
 
             <div>
               <label className="block text-xs font-bold text-slate-300 uppercase mb-2">
-                Фотография товара
+                Фото и видео товара
               </label>
               <div className="rounded-2xl border border-dashed border-slate-600 bg-[#0F172A] p-4">
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={handleImageSelect}
+                  multiple
+                  accept=".jpg,.jpeg,.png,.webp,.mp4,.webm,.mov,image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
+                  onChange={handleMediaSelect}
                   className="block w-full text-xs text-slate-300 file:mr-4 file:rounded-xl file:border-0 file:bg-orange-500 file:px-4 file:py-2.5 file:font-bold file:text-white hover:file:bg-orange-600"
                 />
                 <p className="mt-2 text-[10px] text-slate-500">
-                  JPG, PNG или WebP, размером до 5 МБ. Фото загрузится при сохранении товара.
+                  До 10 фото JPG/PNG/WebP по 5 МБ и до 2 видео MP4/WebM/MOV по 50 МБ.
+                  Можно выбрать сразу несколько файлов.
                 </p>
 
-                {imagePreview && (
-                  <div className="mt-4 flex flex-col sm:flex-row items-start gap-4">
-                    <div className="h-40 w-full sm:w-56 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 p-2">
+                {(existingImages.length > 0 || existingVideos.length > 0 || pendingMedia.length > 0) && (
+                  <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {existingImages.map((url, index) => (
+                      <div key={`existing-image-${url}`} className="relative h-36 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 p-2">
                       <img
-                        src={imagePreview}
-                        alt="Предпросмотр фотографии товара"
+                          src={url}
+                          alt={`Фотография ${index + 1}`}
                         className="h-full w-full object-contain"
                       />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setImageFile(null);
-                        setImageUrl('');
-                        setImagePreview('');
-                      }}
-                      className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-bold text-red-400 hover:bg-red-500/20"
-                    >
-                      Убрать фото
-                    </button>
+                        <button
+                          type="button"
+                          onClick={() => setExistingImages((items) => items.filter((_, itemIndex) => itemIndex !== index))}
+                          className="absolute right-2 top-2 h-7 w-7 rounded-full bg-red-600 text-xs font-bold text-white shadow-lg hover:bg-red-500"
+                          aria-label={`Убрать фотографию ${index + 1}`}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+
+                    {existingVideos.map((url, index) => (
+                      <div key={`existing-video-${url}`} className="relative h-36 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 p-2">
+                        <video src={url} className="h-full w-full object-contain" controls preload="metadata" />
+                        <button
+                          type="button"
+                          onClick={() => setExistingVideos((items) => items.filter((_, itemIndex) => itemIndex !== index))}
+                          className="absolute right-2 top-2 h-7 w-7 rounded-full bg-red-600 text-xs font-bold text-white shadow-lg hover:bg-red-500"
+                          aria-label={`Убрать видео ${index + 1}`}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+
+                    {pendingMedia.map((media) => (
+                      <div key={media.id} className="relative h-36 overflow-hidden rounded-xl border border-orange-500/40 bg-slate-900 p-2">
+                        {media.kind === 'image' ? (
+                          <img
+                            src={media.previewUrl}
+                            alt={media.file.name}
+                            className="h-full w-full object-contain"
+                          />
+                        ) : (
+                          <video
+                            src={media.previewUrl}
+                            className="h-full w-full object-contain"
+                            controls
+                            preload="metadata"
+                          />
+                        )}
+                        <span className="absolute bottom-2 left-2 rounded bg-orange-500 px-2 py-1 text-[9px] font-bold text-white">
+                          Новый файл
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setPendingMedia((items) => items.filter((item) => item.id !== media.id))}
+                          className="absolute right-2 top-2 h-7 w-7 rounded-full bg-red-600 text-xs font-bold text-white shadow-lg hover:bg-red-500"
+                          aria-label={`Убрать файл ${media.file.name}`}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -704,12 +823,14 @@ export default function AdminPage() {
                     <tr key={prod.id} className="hover:bg-slate-700/30 transition">
                       <td className="py-3 px-2">
                         <div className="h-12 w-12 overflow-hidden rounded-lg border border-slate-700 bg-slate-900 flex items-center justify-center">
-                          {prod.image_url ? (
+                          {prod.images?.[0] || prod.image_url ? (
                             <img
-                              src={prod.image_url}
+                              src={prod.images?.[0] || prod.image_url || ''}
                               alt={prod.title}
                               className="h-full w-full object-contain"
                             />
+                          ) : prod.videos && prod.videos.length > 0 ? (
+                            <span className="text-slate-400">🎬</span>
                           ) : (
                             <span className="text-slate-500">📷</span>
                           )}
